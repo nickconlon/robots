@@ -198,8 +198,3 @@ include_directories(
 
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
-include_directories(include ${catkin_INCLUDE_DIRS})
-
-add_executable(bot4 src/bot4.cpp)
-target_link_libraries(bot4 ${catkin_LIBRARIES})
-add_dependencies(bot4 hw_4_localization_generate_messages_cpp)
