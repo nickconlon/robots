@@ -75,10 +75,10 @@ def bot(argv):
   fail = False
 
   if len(argv) == 2:
-    if argv[1] == 'east':
+    if argv[1] == 'west':
       position = 600
       velocity = -4
-    if argv[1] == 'west':
+    elif argv[1] == 'east':
       position = 0
       velocity = 4
     else:
