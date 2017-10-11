@@ -29,11 +29,11 @@ def callback(data):
 #
 # The bayes filter.
 #
-def bayesFilter(bel, u, d):
+def bayesFilter(bel, u, p, d):
   if d == 'z':
     bel_ = sensorUpdate(bel)
   if d == 'u':
-    bel_ = movementUpdate(bel, u)
+    bel_ = movementUpdate(bel, u, p)
   return norm(bel_)
 
 #
@@ -45,17 +45,19 @@ def sensorUpdate(bel):
       if doorReading == True: #door reading
         bel_[x]=prob.p_door(x/10)*bel[x]
       else: # wall reading
-        bel_[x]=(1-prob.p_door(x/10))*bel[x]
+        bel_[x]=prob.p_wall(x/10)*bel[x]
   return bel_
 
 #
 # Apply a movement update.
 #
-def movementUpdate(bel, m):
-  rolled = np.roll(bel, m) 
-  for x in range(abs(m)):
+def movementUpdate(bel, vel, pos):
+  rolled = np.roll(bel, vel) 
+  for x in range(abs(vel)):
     rolled[x] = 1/600 #just use some small non-zero probability.
-  return norm(rolled)
+  for x in range(len(rolled)):
+    rolled[x] = rolled[x]*prob.gauss(pos, pos+vel, 0.75)
+  return rolled
 
 #
 # Normalize the array.
@@ -103,13 +105,13 @@ def bot(argv):
   while not rospy.is_shutdown():
    
     # Apply the bayes filter for a sensor reading. 
-    hist = bayesFilter(hist, velocity/2, 'z')
+    hist = bayesFilter(hist, velocity/2, position, 'z')
 
     # Apply the beyes filter for a movement. 
-    hist = bayesFilter(hist, velocity/2, 'u') 
+    hist = bayesFilter(hist, velocity/2, position, 'u') 
     
     # Update the position.
-    position = position + velocity
+    position = position + velocity/2
     
     # Plot the histogram.
     plt.test(hist)
