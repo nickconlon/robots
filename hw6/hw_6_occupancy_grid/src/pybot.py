@@ -20,7 +20,7 @@ import time
 
 # Some constatnts
 SENSOR_CONE_DEGREES = 45
-SCALE_FACTOR = 4
+SCALE_FACTOR = 5
 GRID_MAX_X = SCALE_FACTOR*60
 GRID_MAX_Y = SCALE_FACTOR*16
 OFFSET_X = 30
@@ -101,7 +101,6 @@ def get_rotation (msg):
 def inverseSensorModel(mp, cp, z):
   numerator = 1  #np.random.normal(
   denominator = 1  #1-numerator
-  print np.log(numerator/denominator)
   return 1
 
 
