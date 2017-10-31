@@ -66,15 +66,13 @@ def truthCallback(data):
 # The callback for receiving sensor readings.
 #
 def sensorCallback(data):
-  r1 = data.ranges[1] # to the right 45
-  r2 = data.ranges[2] # straight ahead
-  r3 = data.ranges[3] # to the left 45
-  
+  z = data.ranges
+  c = data.angle_max
   if(state.x != None and state.y != None): #so we don't try to map before we get state information
     x = point2d((state.x+OFFSET_X), (state.y+OFFSET_Y)) # current position
-    occupancyGridMapping(x, r1, r2, r3)
+    occupancyGridMapping(x, z, c, data.range_max)
 
-  pub.publish(getTwistToPublish(r1, r2, r3))
+  pub.publish(getTwistToPublish(z))
   occ.publish(getGridToPublish(state.grid))
   return
 
@@ -95,53 +93,55 @@ def get_rotation (msg):
     (roll, pitch, yaw) = euler_from_quaternion (orientation_list)
     return yaw
 
-#
-# Inverse sensor model
-#
-def inverseSensorModel(mp, cp, z):
-  numerator = 1  #np.random.normal(
-  denominator = 1  #1-numerator
-  return 1
-
 
 #
 # Return true if mapPoint is in the perceptual field of the robot given it's state
 #
-def inPerceptualField(mapPoint, curPoint, heading_deg, reading):
+def inPerceptualField(mapPoint, curPoint, headingDeg, sensorConeDeg, maxRange):
   d = mapPoint.getDistance(curPoint) 
-  theta_l = heading_deg+SENSOR_CONE_DEGREES
-  theta_r = heading_deg-SENSOR_CONE_DEGREES
+  theta_l = headingDeg+sensorConeDeg
+  theta_r = headingDeg-sensorConeDeg
   theta_point = np.arctan2(mapPoint.y-curPoint.y, mapPoint.x-curPoint.x)
   theta_point = np.rad2deg(theta_point)
-  if(d <= reading and theta_point < theta_l and theta_point > theta_r):
+  if(d <= maxRange and theta_point < theta_l and theta_point > theta_r):
     return True
   return False
    
 
-# matrix l
-# Point m
-# Point x
-# double heading angle z
-def occupancyGridMapping(cp, r1, r2, r3):
-
+#
+#
+#
+def occupancyGridMapping(cp, z, sensorConeDeg, maxRange):
   heading_deg = (np.rad2deg(state.theta)+360)%360
   for y in range(GRID_MAX_Y):
     for x in range(GRID_MAX_X):
+      # center of mass of the cell we are looking at
       mp = point2d(x/SCALE_FACTOR+SCALE_FACTOR/2, y/SCALE_FACTOR+SCALE_FACTOR/2)
-      if(inPerceptualField(mp, cp, heading_deg, r2)):
-        state.grid[y][x]=state.grid[y][x]+inverseSensorModel(mp, cp, r2) # -lo ? const prior
+      if(inPerceptualField(mp, cp, heading_deg, sensorConeDeg, maxRange)):
+        state.grid[y][x]=state.grid[y][x]+inverseSensorModel(mp, cp, z[2]) 
+      ##if in perceptual field 
+      ##
+  
   return
 
+#
+# Inverse sensor model
+#
+def inverseSensorModel(mp, cp, z):
+  #pg 288 algorith  
+
+
+  return 1
 
 
 #
 # Fill in the twist message based on current position data
 #
-def getTwistToPublish(r1, r2, r3):
-  if(r1 < 2): # don't crash
+def getTwistToPublish(z):
+  if(z[1] < 2): # don't crash
     twist.linear.x = 0.0
     twist.angular.z = 10.0
-  elif(r1 < r3): # don't go too far in either direction
+  elif(z[1] < z[3]): # don't go too far in either direction
     twist.angular.z = 2.0
     twist.linear.x = 5.0
   else:
