@@ -20,7 +20,7 @@ import time
 
 # Some constatnts
 SENSOR_CONE_DEGREES = 45
-SCALE_FACTOR = 5
+SCALE_FACTOR = 2
 GRID_MAX_X = SCALE_FACTOR*60
 GRID_MAX_Y = SCALE_FACTOR*16
 OFFSET_X = 30
@@ -59,7 +59,6 @@ def truthCallback(data):
   state.x = data.pose.pose.position.x
   state.y = data.pose.pose.position.y
   state.theta = get_rotation(data)
-  return
 
 
 #
@@ -74,7 +73,7 @@ def sensorCallback(data):
 
   pub.publish(getTwistToPublish(z))
   occ.publish(getGridToPublish(state.grid))
-  return
+
 
 #
 # Fill in the grid message to publish
@@ -97,12 +96,11 @@ def get_rotation (msg):
 #
 # Return true if mapPoint is in the perceptual field of the robot given it's state
 #
-def inPerceptualField(mapPoint, curPoint, headingDeg, sensorConeDeg, maxRange):
-  d = mapPoint.getDistance(curPoint) 
-  theta_l = headingDeg+sensorConeDeg
-  theta_r = headingDeg-sensorConeDeg
-  theta_point = np.arctan2(mapPoint.y-curPoint.y, mapPoint.x-curPoint.x)
-  theta_point = np.rad2deg(theta_point)
+def inPerceptualField(mp, cp, headingDeg, sensorConeDeg, maxRange):
+  d = mp.getDistance(cp) 
+  theta_l = ((headingDeg+sensorConeDeg)+360)%360
+  theta_r = ((headingDeg-sensorConeDeg)+360)%360
+  theta_point = (np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))+360)%360
   if(d <= maxRange and theta_point < theta_l and theta_point > theta_r):
     return True
   return False
@@ -112,27 +110,41 @@ def inPerceptualField(mapPoint, curPoint, headingDeg, sensorConeDeg, maxRange):
 #
 #
 def occupancyGridMapping(cp, z, sensorConeDeg, maxRange):
-  heading_deg = (np.rad2deg(state.theta)+360)%360
+  h0 = (np.rad2deg(state.theta-np.pi/2)+360)%360 # right 90 deg
+  h1 = (np.rad2deg(state.theta-np.pi/4)+360)%360 # right 45 deg
+  h2 = (np.rad2deg(state.theta)+360)%360         # center
+  h3 = (np.rad2deg(state.theta+np.pi/4)+360)%360 # left 45 deg
+  h4 = (np.rad2deg(state.theta+np.pi/2)+360)%360 # left 90 deg
+
   for y in range(GRID_MAX_Y):
     for x in range(GRID_MAX_X):
+
       # center of mass of the cell we are looking at
       mp = point2d(x/SCALE_FACTOR+SCALE_FACTOR/2, y/SCALE_FACTOR+SCALE_FACTOR/2)
-      if(inPerceptualField(mp, cp, heading_deg, sensorConeDeg, maxRange)):
-        state.grid[y][x]=state.grid[y][x]+inverseSensorModel(mp, cp, z[2]) 
-      ##if in perceptual field 
-      ##
-  
-  return
 
+      if(inPerceptualField(mp, cp, h0, sensorConeDeg, maxRange)):
+        state.grid[y][x] = inverseSensorModel(mp, cp, z[0])  
+      if(inPerceptualField(mp, cp, h1, sensorConeDeg, maxRange)):
+        state.grid[y][x] = inverseSensorModel(mp, cp, z[1])
+      if(inPerceptualField(mp, cp, h2, sensorConeDeg, maxRange)):
+        state.grid[y][x] = inverseSensorModel(mp, cp, z[2])
+      if(inPerceptualField(mp, cp, h3, sensorConeDeg, maxRange)):
+        state.grid[y][x] = inverseSensorModel(mp, cp, z[3])
+      if(inPerceptualField(mp, cp, h4, sensorConeDeg, maxRange)):
+        state.grid[y][x] = inverseSensorModel(mp, cp, z[4])
+  
 #
 # Inverse sensor model
 #
+# Return 1 if mp is occluded, zero othewise
+#
 def inverseSensorModel(mp, cp, z):
   #pg 288 algorith  
-
-
-  return 1
-
+  r = mp.getDistance(cp)
+  if r >= z:
+    return 100
+  else:
+    return 1
 
 #
 # Fill in the twist message based on current position data
