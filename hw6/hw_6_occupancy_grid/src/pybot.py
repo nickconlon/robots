@@ -20,7 +20,7 @@ import time
 
 # Some constatnts
 SENSOR_CONE_DEGREES = 45
-SCALE_FACTOR = 2 
+SCALE_FACTOR =4
 GRID_MAX_X = SCALE_FACTOR*60
 GRID_MAX_Y = SCALE_FACTOR*16
 OFFSET_X = 30
@@ -49,8 +49,8 @@ class Data():
 state = Data(None, None, 0.0)
 
 # Publishers
-pub = rospy.Publisher('robot/cmd_vel', Twist, queue_size=1)
-occ = rospy.Publisher('/map',OccupancyGrid, queue_size=1)
+pub = rospy.Publisher('robot/cmd_vel', Twist, queue_size=100)
+occ = rospy.Publisher('/map',OccupancyGrid, queue_size=100)
 
 
 #
@@ -67,10 +67,11 @@ def truthCallback(data):
 #
 def sensorCallback(data):
   z = data.ranges
-  c = 20 # (np.rad2deg(data.angle_max)+360)%360
+  beammax = (np.rad2deg(data.angle_max)+360)%360
+  beamwidth = beammax/len(data.ranges)
   if(state.x != None and state.y != None): #so we don't try to map before we get state information
     x = point2d((state.x+OFFSET_X), (state.y+OFFSET_Y)) # current position
-    occupancyGridMapping(x, z, c, data.range_max)
+    occupancyGridMapping(x, z, beamwidth, beammax, data.range_max)
 
   pub.publish(getTwistToPublish(z))
   occ.publish(getGridToPublish(state.grid))
@@ -97,12 +98,12 @@ def get_rotation (msg):
 #
 # Return true if mapPoint is in the perceptual field of the robot given it's state
 #
-def inPerceptualField(mp, cp, headingDeg, sensorConeDeg, maxRange):
+def inPerceptualField(mp, cp, headingDeg, beammax, zmax):
   d = mp.getDistance(cp) 
-  theta_l = ((headingDeg+sensorConeDeg)+360)%360
-  theta_r = ((headingDeg-sensorConeDeg)+360)%360
-  theta_point = ((np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))-headingDeg)+360)%360
-  if(d <= maxRange and theta_point < theta_l and theta_point > theta_r):
+  theta_mp = (np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))+360)%360
+  diff = angleDiff(headingDeg, theta_mp)
+  if( d <= zmax and diff < beammax/2):
+    #print headingDeg-beammax/2, headingDeg+beammax/2, theta_mp, diff, np.arctan2(mp.y-cp.y, mp.x-cp.x), headingDeg
     return True
   return False
    
@@ -110,65 +111,57 @@ def inPerceptualField(mp, cp, headingDeg, sensorConeDeg, maxRange):
 #
 #
 #
-def occupancyGridMapping(cp, z, sensorConeDeg, maxRange):
+def occupancyGridMapping(cp, z, beamwidth, beammax, zmax):
   h0 = (np.rad2deg(state.theta-np.pi/2)+360)%360 # right 90 deg
   h1 = (np.rad2deg(state.theta-np.pi/4)+360)%360 # right 45 deg
   h2 = (np.rad2deg(state.theta)+360)%360         # center
   h3 = (np.rad2deg(state.theta+np.pi/4)+360)%360 # left 45 deg
   h4 = (np.rad2deg(state.theta+np.pi/2)+360)%360 # left 90 deg
   thetas = [h0, h1, h2, h3, h4]
-
+ 
   for y in range(GRID_MAX_Y):
     for x in range(GRID_MAX_X):
-
-      # center of mass of the cell we are looking at
+      
       mp = point2d(x/SCALE_FACTOR+SCALE_FACTOR/2, y/SCALE_FACTOR+SCALE_FACTOR/2)
-  
-      if(inPerceptualField(mp, cp, h2, 90, maxRange)):
-        state.l[y][x] = state.l[y][x] + inverseSensorModel(mp, cp, maxRange, z, thetas, sensorConeDeg) - 0.5
+       
+      if(inPerceptualField(mp, cp, h2, beammax, zmax)):
+        log = inverseSensorModel(mp, cp, zmax, z, thetas, beamwidth) - 0.5
+        state.l[y][x] = state.l[y][x] + log 
+        
+        # extract the probability
         prob = 1-(1.0/(1+np.exp(state.l[y][x])))
-        print prob
-        if prob > 0.90:
+        
+        # fill in the grid for visulalization
+        if prob > 0.8:
           state.grid[y][x] = 100
-        elif prob > 0.25:
+        elif prob < 0.5:
           state.grid[y][x] = 0
         else:
           state.grid[y][x] = -1
-       
-#      if(inPerceptualField(mp, cp, h1, sensorConeDeg, maxRange)):
-#        state.grid[y][x] = inverseSensorModel(mp, cp, z[1])
-#      if(inPerceptualField(mp, cp, h2, sensorConeDeg, maxRange)):
-#        state.grid[y][x] = inverseSensorModel(mp, cp, z[2])
-#      if(inPerceptualField(mp, cp, h3, sensorConeDeg, maxRange)):
-#        state.grid[y][x] = inverseSensorModel(mp, cp, z[3])
-#      if(inPerceptualField(mp, cp, h4, sensorConeDeg, maxRange)):
-#        state.grid[y][x] = inverseSensorModel(mp, cp, z[4])
+
   
 #
-# Inverse sensor model
-#
-# Return 1 if mp is occluded, zero othewise
+# Inverse sensor model as seen on pg 288
 #
 def inverseSensorModel(mp, cp, zmax, z, thetas, beamwidth):
-  #pg 288 algorith 
-  print "inverse sensor model" 
   alpha = 1.0/SCALE_FACTOR
   beta = beamwidth
+  headingTheta = thetas[2]
   r = mp.getDistance(cp)
-  phi = ((np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))-thetas[2])+360)%360
+  phi = (np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))+360)%360
   k = argmin(phi, thetas)
-  print "kay"
-  if r > min(zmax, z[k]+alpha/2) or abs(phi-thetas[k]) > beta/2:
+  if r > min(zmax, z[k]+alpha/2) or angleDiff(phi, thetas[k]) > beta/2:
     return 0.5 # l_0
-  elif z[k] < zmax:# and abs(r-z[k]) < alpha/2:
+  elif z[k] < zmax and abs(r-z[k]) < alpha/2:
     return 1.0 # l_occ
   else:
     return 0.0 # l_free
 
-  print "fail"
 
 
-
+#
+# Find the argmin over j
+#
 def argmin(phi, thetas):
   k = 360 #max degree difference
   i = 0
@@ -178,6 +171,15 @@ def argmin(phi, thetas):
       k = arg
       i = j
   return i
+
+
+#
+# Find the difference between two angles in degrees
+#
+def angleDiff(a, b):
+  a1 = (a+360)%360
+  b1 = (b+360)%360
+  return 180-abs(abs(a1 - b1)-180)
 
       
 
