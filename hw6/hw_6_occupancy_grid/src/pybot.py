@@ -20,7 +20,7 @@ import time
 
 # Some constatnts
 SENSOR_CONE_DEGREES = 45
-SCALE_FACTOR = 2
+SCALE_FACTOR = 2 
 GRID_MAX_X = SCALE_FACTOR*60
 GRID_MAX_Y = SCALE_FACTOR*16
 OFFSET_X = 30
@@ -43,6 +43,7 @@ class Data():
     self.y = y
     self.theta = theta
     self.grid = np.array([[-1.0 for x in range(GRID_MAX_X)] for j in range(GRID_MAX_Y)], np.int8)
+    self.l = np.array([[0.5 for x in range(GRID_MAX_X)] for j in range(GRID_MAX_Y)], np.float32)
 
 # Robot state
 state = Data(None, None, 0.0)
@@ -66,7 +67,7 @@ def truthCallback(data):
 #
 def sensorCallback(data):
   z = data.ranges
-  c = data.angle_max
+  c = 20 # (np.rad2deg(data.angle_max)+360)%360
   if(state.x != None and state.y != None): #so we don't try to map before we get state information
     x = point2d((state.x+OFFSET_X), (state.y+OFFSET_Y)) # current position
     occupancyGridMapping(x, z, c, data.range_max)
@@ -100,7 +101,7 @@ def inPerceptualField(mp, cp, headingDeg, sensorConeDeg, maxRange):
   d = mp.getDistance(cp) 
   theta_l = ((headingDeg+sensorConeDeg)+360)%360
   theta_r = ((headingDeg-sensorConeDeg)+360)%360
-  theta_point = (np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))+360)%360
+  theta_point = ((np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))-headingDeg)+360)%360
   if(d <= maxRange and theta_point < theta_l and theta_point > theta_r):
     return True
   return False
@@ -115,36 +116,70 @@ def occupancyGridMapping(cp, z, sensorConeDeg, maxRange):
   h2 = (np.rad2deg(state.theta)+360)%360         # center
   h3 = (np.rad2deg(state.theta+np.pi/4)+360)%360 # left 45 deg
   h4 = (np.rad2deg(state.theta+np.pi/2)+360)%360 # left 90 deg
+  thetas = [h0, h1, h2, h3, h4]
 
   for y in range(GRID_MAX_Y):
     for x in range(GRID_MAX_X):
 
       # center of mass of the cell we are looking at
       mp = point2d(x/SCALE_FACTOR+SCALE_FACTOR/2, y/SCALE_FACTOR+SCALE_FACTOR/2)
-
-      if(inPerceptualField(mp, cp, h0, sensorConeDeg, maxRange)):
-        state.grid[y][x] = inverseSensorModel(mp, cp, z[0])  
-      if(inPerceptualField(mp, cp, h1, sensorConeDeg, maxRange)):
-        state.grid[y][x] = inverseSensorModel(mp, cp, z[1])
-      if(inPerceptualField(mp, cp, h2, sensorConeDeg, maxRange)):
-        state.grid[y][x] = inverseSensorModel(mp, cp, z[2])
-      if(inPerceptualField(mp, cp, h3, sensorConeDeg, maxRange)):
-        state.grid[y][x] = inverseSensorModel(mp, cp, z[3])
-      if(inPerceptualField(mp, cp, h4, sensorConeDeg, maxRange)):
-        state.grid[y][x] = inverseSensorModel(mp, cp, z[4])
+  
+      if(inPerceptualField(mp, cp, h2, 90, maxRange)):
+        state.l[y][x] = state.l[y][x] + inverseSensorModel(mp, cp, maxRange, z, thetas, sensorConeDeg) - 0.5
+        prob = 1-(1.0/(1+np.exp(state.l[y][x])))
+        print prob
+        if prob > 0.90:
+          state.grid[y][x] = 100
+        elif prob > 0.25:
+          state.grid[y][x] = 0
+        else:
+          state.grid[y][x] = -1
+       
+#      if(inPerceptualField(mp, cp, h1, sensorConeDeg, maxRange)):
+#        state.grid[y][x] = inverseSensorModel(mp, cp, z[1])
+#      if(inPerceptualField(mp, cp, h2, sensorConeDeg, maxRange)):
+#        state.grid[y][x] = inverseSensorModel(mp, cp, z[2])
+#      if(inPerceptualField(mp, cp, h3, sensorConeDeg, maxRange)):
+#        state.grid[y][x] = inverseSensorModel(mp, cp, z[3])
+#      if(inPerceptualField(mp, cp, h4, sensorConeDeg, maxRange)):
+#        state.grid[y][x] = inverseSensorModel(mp, cp, z[4])
   
 #
 # Inverse sensor model
 #
 # Return 1 if mp is occluded, zero othewise
 #
-def inverseSensorModel(mp, cp, z):
-  #pg 288 algorith  
+def inverseSensorModel(mp, cp, zmax, z, thetas, beamwidth):
+  #pg 288 algorith 
+  print "inverse sensor model" 
+  alpha = 1.0/SCALE_FACTOR
+  beta = beamwidth
   r = mp.getDistance(cp)
-  if r >= z:
-    return 100
+  phi = ((np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))-thetas[2])+360)%360
+  k = argmin(phi, thetas)
+  print "kay"
+  if r > min(zmax, z[k]+alpha/2) or abs(phi-thetas[k]) > beta/2:
+    return 0.5 # l_0
+  elif z[k] < zmax:# and abs(r-z[k]) < alpha/2:
+    return 1.0 # l_occ
   else:
-    return 1
+    return 0.0 # l_free
+
+  print "fail"
+
+
+
+def argmin(phi, thetas):
+  k = 360 #max degree difference
+  i = 0
+  for j in range(len(thetas)):
+    arg = abs(phi-thetas[j])
+    if(arg < k):
+      k = arg
+      i = j
+  return i
+
+      
 
 #
 # Fill in the twist message based on current position data
