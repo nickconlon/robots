@@ -20,7 +20,7 @@ import time
 
 # Some constatnts
 SENSOR_CONE_DEGREES = 45
-SCALE_FACTOR =4
+SCALE_FACTOR =1
 GRID_MAX_X = SCALE_FACTOR*60
 GRID_MAX_Y = SCALE_FACTOR*16
 OFFSET_X = 30
@@ -99,49 +99,40 @@ def get_rotation (msg):
 # Return true if mapPoint is in the perceptual field of the robot given it's state
 #
 def inPerceptualField(mp, cp, headingDeg, beammax, zmax):
-  d = mp.getDistance(cp) 
+  d = mp.getDistance(cp)
   theta_mp = (np.rad2deg(np.arctan2(mp.y-cp.y, mp.x-cp.x))+360)%360
   diff = angleDiff(headingDeg, theta_mp)
-  if( d <= zmax and diff < beammax/2):
-    #print headingDeg-beammax/2, headingDeg+beammax/2, theta_mp, diff, np.arctan2(mp.y-cp.y, mp.x-cp.x), headingDeg
+  if( d <= zmax and diff < beammax):
     return True
   return False
    
 
 #
-#
+# Run the occupancy grid mapping algorithm
 #
 def occupancyGridMapping(cp, z, beamwidth, beammax, zmax):
-  h0 = (np.rad2deg(state.theta-np.pi/2)+360)%360 # right 90 deg
-  h1 = (np.rad2deg(state.theta-np.pi/4)+360)%360 # right 45 deg
-  h2 = (np.rad2deg(state.theta)+360)%360         # center
-  h3 = (np.rad2deg(state.theta+np.pi/4)+360)%360 # left 45 deg
-  h4 = (np.rad2deg(state.theta+np.pi/2)+360)%360 # left 90 deg
-  thetas = [h0, h1, h2, h3, h4]
- 
+  thetas = getSensorAngles()
+  heading = thetas[2]
+
   for y in range(GRID_MAX_Y):
     for x in range(GRID_MAX_X):
-      
-      mp = point2d(x/SCALE_FACTOR+SCALE_FACTOR/2, y/SCALE_FACTOR+SCALE_FACTOR/2)
+
+      # the point we want to look at 
+      mp = point2d(x/SCALE_FACTOR, y/SCALE_FACTOR)
        
-      if(inPerceptualField(mp, cp, h2, beammax, zmax)):
+      if(inPerceptualField(mp, cp, heading, beammax, zmax)):
         log = inverseSensorModel(mp, cp, zmax, z, thetas, beamwidth) - 0.5
         state.l[y][x] = state.l[y][x] + log 
-        
+
         # extract the probability
         prob = 1-(1.0/(1+np.exp(state.l[y][x])))
-        
-        # fill in the grid for visulalization
-        if prob > 0.8:
-          state.grid[y][x] = 100
-        elif prob < 0.5:
-          state.grid[y][x] = 0
-        else:
-          state.grid[y][x] = -1
 
-  
+        # fill in the grid for visulalization. these values require tweaking :(
+        setGrid(prob, x, y)
+
+
 #
-# Inverse sensor model as seen on pg 288
+# Inverse sensor model as seen on pg 288 of the textbook
 #
 def inverseSensorModel(mp, cp, zmax, z, thetas, beamwidth):
   alpha = 1.0/SCALE_FACTOR
@@ -181,7 +172,31 @@ def angleDiff(a, b):
   b1 = (b+360)%360
   return 180-abs(abs(a1 - b1)-180)
 
-      
+#
+#
+#
+def getSensorAngles():
+  h0 = (np.rad2deg(state.theta-np.pi/2)+360)%360 # right 90 deg
+  h1 = (np.rad2deg(state.theta-np.pi/4)+360)%360 # right 45 deg
+  h2 = (np.rad2deg(state.theta)+360)%360         # center
+  h3 = (np.rad2deg(state.theta+np.pi/4)+360)%360 # left 45 deg
+  h4 = (np.rad2deg(state.theta+np.pi/2)+360)%360 # left 90 deg
+  thetas = [h0, h1, h2, h3, h4]
+  return thetas
+
+#
+#
+#
+def setGrid(prob, x, y):
+  if prob > 0.7:
+    state.grid[y][x] = 100
+  elif prob < 0.5:
+    state.grid[y][x] = 0
+  else:
+    state.grid[y][x] = -1
+
+
+
 
 #
 # Fill in the twist message based on current position data
