@@ -1,0 +1,84 @@
+# cave.world - 100 robot test and benchmark world
+# Authors: Richard Vaughan
+# $id$
+
+#include "../pioneer.inc"
+include "map.inc"
+#include "../sick.inc"
+
+resolution 0.02    # resolution of the underlying raytrace mode
+
+speedup -1 # as fast as possible
+
+paused 1
+
+threads 7
+
+# configure the GUI window
+window
+(
+  size [ 1076.000 585.000 ]
+  center [-0.464 1.570]
+  #rotate [ 58.500 17.500 ]
+  scale 25.439 
+  interval 50
+)
+
+floorplan
+( 
+  name "cave"
+  size [30.000 30.000 0.600]
+  pose [0 0 0 0]
+  bitmap "cave_filled.png" #cave_filled.png
+)
+
+
+define sicklms ranger
+(
+  range_max 5.0
+  sensor (
+    fov 180.0
+    samples 5
+  )
+  model (
+    size [ 0.250 0.250 0.100 ]
+    color "black"
+  )
+)
+
+define rob position
+(
+  size [0.550 0.550 0.500]
+  gui_nose 1
+  drive "diff"
+  name "robot" 
+  color "blue"
+  sicklms(pose [ 0.000 0.000 0.000 0.000 ])
+)
+
+define redrob rob( color "red" )
+define greenrob rob( color "green" )
+define magentarob rob( color "magenta" )
+define cyanrob rob( color "cyan" )
+define yellowrob rob( color "yellow" )
+define bluerob rob( color "LightBlue" )
+#define orangerob rob( color "orange" )
+#define purplerob rob( color "purple" )
+#define goldrob rob( color "gold" )
+#define darkredrob rob( color "DarkRed" )
+
+# 100 robots in assorted colors
+
+redrob( pose [-5.285 4.915 0 150.459] )
+greenrob( pose [-2.686 6.660 0 -20.602] )
+magentarob( pose [1.731 7.042 0 -92.107] )
+cyanrob( pose [-2.544 4.684 0 -134.461] )
+yellowrob( pose [-7.548 3.117 0 12.515] )
+bluerob( pose [-7.014 6.409 0 -103.088] )
+#orangerob( pose [-7.652 -2.012 0 -0.754] )
+#purplerob( pose [-3.863 1.615 0 -84.575] )
+#goldrob( pose [5.834 7.276 0 -74.706] )
+#darkredrob( pose [-7.630 0.425 0 -15.747] )
+
+
+
